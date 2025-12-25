@@ -433,7 +433,7 @@ function App() {
 
         {/* Main Content */}
         {loading ? (
-          <ProgressLoader />
+          <ProgressLoader progress={progress} />
         ) : !result ? (
           <div className="grid md:grid-cols-2 gap-8">
             {/* Upload Section */}
