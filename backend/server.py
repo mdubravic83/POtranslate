@@ -279,7 +279,6 @@ async def translate_po_file(
         }
         
         # Translate entries
-        start_time = time.time()
         times_per_entry = []
         
         for idx, entry in enumerate(entries_to_translate):
