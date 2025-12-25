@@ -1,0 +1,62 @@
+# DigitalOcean App Platform Specification (alternative location)
+# Copy this to .do/app.yaml or use it directly when creating the app
+#
+# IMPORTANT: Replace <your-github-username>/<your-repo-name> with your actual repo
+#
+# To deploy:
+# 1. Push this repo to GitHub
+# 2. Go to DigitalOcean App Platform
+# 3. Click "Create App"
+# 4. Select your GitHub repo
+# 5. DigitalOcean will auto-detect this spec file
+
+name: po-translator
+
+services:
+  # Backend API Service
+  - name: backend
+    github:
+      repo: <your-github-username>/<your-repo-name>
+      branch: main
+      deploy_on_push: true
+    source_dir: /backend
+    dockerfile_path: Dockerfile
+    http_port: 8001
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    routes:
+      - path: /api
+    envs:
+      - key: MONGO_URL
+        scope: RUN_TIME
+        value: ${db.DATABASE_URL}
+      - key: DB_NAME
+        scope: RUN_TIME
+        value: po_translator
+      - key: CORS_ORIGINS
+        scope: RUN_TIME
+        value: ${APP_URL}
+
+  # Frontend Static Site  
+  - name: frontend
+    github:
+      repo: <your-github-username>/<your-repo-name>
+      branch: main
+      deploy_on_push: true
+    source_dir: /frontend
+    dockerfile_path: Dockerfile
+    http_port: 80
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    routes:
+      - path: /
+    envs:
+      - key: REACT_APP_BACKEND_URL
+        scope: BUILD_TIME
+        value: ${APP_URL}
+
+databases:
+  - name: db
+    engine: MONGODB
+    production: false
+    cluster_name: po-translator-db
