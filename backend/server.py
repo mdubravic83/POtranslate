@@ -212,7 +212,7 @@ async def translate_po_file(
     source_lang: str = Form('auto'),
     target_lang: str = Form('hr')
 ):
-    """Upload and translate a PO file"""
+    """Upload and translate a PO file with SSE progress updates"""
     
     if not file.filename.endswith('.po'):
         raise HTTPException(status_code=400, detail="Only .po files are supported")
@@ -220,24 +220,28 @@ async def translate_po_file(
     if target_lang not in SUPPORTED_LANGUAGES:
         raise HTTPException(status_code=400, detail=f"Unsupported target language: {target_lang}")
     
+    # Read file content
+    content = await file.read()
+    filename = file.filename
+    
+    # Parse PO file
     try:
-        # Read file content
-        content = await file.read()
-        
-        # Parse PO file
         po = parse_po_file(content)
-        
-        # Prepare entries for translation
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error parsing PO file: {str(e)}")
+    
+    async def generate_events():
         entries = []
         translated_count = 0
         skipped_count = 0
         error_count = 0
         
-        logger.info(f"Processing {len(po)} entries from {file.filename}")
+        total = len(po)
+        entries_to_translate = []
         
+        # First pass - identify what needs translation
         for entry in po:
             if not entry.msgid or entry.msgid.strip() == '':
-                # Skip empty entries
                 skipped_count += 1
                 entries.append(TranslationEntry(
                     msgid=entry.msgid,
@@ -245,11 +249,7 @@ async def translate_po_file(
                     translated=entry.msgstr,
                     status='skipped'
                 ))
-                continue
-            
-            # Check if already translated and we should keep it
-            if entry.msgstr and entry.msgstr.strip() != '':
-                # Already has translation, skip
+            elif entry.msgstr and entry.msgstr.strip() != '':
                 skipped_count += 1
                 entries.append(TranslationEntry(
                     msgid=entry.msgid,
@@ -257,10 +257,36 @@ async def translate_po_file(
                     translated=entry.msgstr,
                     status='skipped'
                 ))
-                continue
+            else:
+                entries_to_translate.append(entry)
+        
+        to_translate_count = len(entries_to_translate)
+        
+        # Send initial progress
+        yield {
+            "event": "progress",
+            "data": json.dumps({
+                "status": "started",
+                "total": total,
+                "to_translate": to_translate_count,
+                "translated": 0,
+                "skipped": skipped_count,
+                "errors": 0,
+                "percent": 0,
+                "eta_seconds": None,
+                "current_text": ""
+            })
+        }
+        
+        # Translate entries
+        start_time = time.time()
+        times_per_entry = []
+        
+        for idx, entry in enumerate(entries_to_translate):
+            entry_start = time.time()
+            current_text = entry.msgid[:50] + "..." if len(entry.msgid) > 50 else entry.msgid
             
             try:
-                # Translate the msgid
                 translated = await translate_text(entry.msgid, source_lang, target_lang)
                 
                 entries.append(TranslationEntry(
@@ -271,27 +297,56 @@ async def translate_po_file(
                 ))
                 translated_count += 1
                 
-                # Add small delay to avoid rate limiting
-                await asyncio.sleep(0.1)
-                
             except Exception as e:
                 logger.error(f"Error translating '{entry.msgid}': {e}")
                 error_count += 1
                 entries.append(TranslationEntry(
                     msgid=entry.msgid,
                     msgstr=entry.msgstr,
-                    translated=entry.msgstr,  # Keep original on error
+                    translated=entry.msgstr,
                     status='error'
                 ))
+            
+            # Calculate timing
+            entry_time = time.time() - entry_start
+            times_per_entry.append(entry_time)
+            
+            # Calculate ETA based on average time
+            avg_time = sum(times_per_entry) / len(times_per_entry)
+            remaining = to_translate_count - (idx + 1)
+            eta_seconds = int(remaining * avg_time)
+            
+            # Calculate overall percent (including skipped)
+            done = skipped_count + translated_count + error_count
+            percent = int((done / total) * 100) if total > 0 else 100
+            
+            # Send progress update
+            yield {
+                "event": "progress",
+                "data": json.dumps({
+                    "status": "translating",
+                    "total": total,
+                    "to_translate": to_translate_count,
+                    "translated": translated_count,
+                    "skipped": skipped_count,
+                    "errors": error_count,
+                    "percent": percent,
+                    "eta_seconds": eta_seconds,
+                    "current_text": current_text
+                })
+            }
+            
+            # Small delay to avoid rate limiting
+            await asyncio.sleep(0.1)
         
         # Create result
         result_id = str(uuid.uuid4())
         result = TranslationResult(
             id=result_id,
-            filename=file.filename,
+            filename=filename,
             source_lang=source_lang,
             target_lang=target_lang,
-            total_entries=len(po),
+            total_entries=total,
             translated_entries=translated_count,
             skipped_entries=skipped_count,
             error_entries=error_count,
@@ -307,24 +362,24 @@ async def translate_po_file(
         # Generate translated PO content
         translated_po_content = generate_translated_po(po, entries, target_lang)
         
-        return {
-            "id": result_id,
-            "filename": file.filename,
-            "source_lang": source_lang,
-            "target_lang": target_lang,
-            "total_entries": len(po),
-            "translated_entries": translated_count,
-            "skipped_entries": skipped_count,
-            "error_entries": error_count,
-            "entries": [e.model_dump() for e in entries],
-            "po_content": translated_po_content
+        # Send final result
+        yield {
+            "event": "complete",
+            "data": json.dumps({
+                "id": result_id,
+                "filename": filename,
+                "source_lang": source_lang,
+                "target_lang": target_lang,
+                "total_entries": total,
+                "translated_entries": translated_count,
+                "skipped_entries": skipped_count,
+                "error_entries": error_count,
+                "entries": [e.model_dump() for e in entries],
+                "po_content": translated_po_content
+            })
         }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error processing file: {e}")
-        raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
+    
+    return EventSourceResponse(generate_events())
 
 
 @api_router.get("/translations/{translation_id}/download")
