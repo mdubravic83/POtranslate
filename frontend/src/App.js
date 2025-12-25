@@ -460,8 +460,8 @@ function App() {
           <h3 className="text-white font-semibold mb-3">ℹ️ Kako koristiti</h3>
           <ul className="text-slate-400 text-sm space-y-2">
             <li>• Uploadajte .po datoteku iz WPML-a ili nekog drugog sustava za lokalizaciju</li>
-            <li>• Odaberite izvorni jezik (ili ostavite "Automatski") i ciljni jezik prijevoda</li>
-            <li>• Kliknite "Prevedi" i pričekajte dok se svi stringovi prevedu</li>
+            <li>• Odaberite izvorni jezik (ili ostavite &quot;Automatski&quot;) i ciljni jezik prijevoda</li>
+            <li>• Kliknite &quot;Prevedi&quot; i pričekajte dok se svi stringovi prevedu</li>
             <li>• Preuzmite prevedenu .po datoteku i importirajte je natrag u WPML</li>
             <li>• Stringovi koji već imaju prijevod bit će preskočeni</li>
           </ul>
