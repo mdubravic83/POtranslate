@@ -48,6 +48,15 @@ const HistoryIcon = () => (
   </svg>
 );
 
+// Helper function to format time
+const formatTime = (seconds) => {
+  if (seconds === null || seconds === undefined) return "--:--";
+  if (seconds < 60) return `${seconds} sek`;
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins} min ${secs} sek`;
+};
+
 function App() {
   const [file, setFile] = useState(null);
   const [languages, setLanguages] = useState({});
@@ -59,6 +68,19 @@ function App() {
   const [history, setHistory] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  
+  // Progress state
+  const [progress, setProgress] = useState({
+    percent: 0,
+    translated: 0,
+    total: 0,
+    toTranslate: 0,
+    skipped: 0,
+    errors: 0,
+    etaSeconds: null,
+    currentText: "",
+    status: "idle"
+  });
 
   // Fetch supported languages
   useEffect(() => {
@@ -135,6 +157,17 @@ function App() {
     setLoading(true);
     setError(null);
     setResult(null);
+    setProgress({
+      percent: 0,
+      translated: 0,
+      total: 0,
+      toTranslate: 0,
+      skipped: 0,
+      errors: 0,
+      etaSeconds: null,
+      currentText: "",
+      status: "starting"
+    });
 
     const formData = new FormData();
     formData.append('file', file);
@@ -142,16 +175,72 @@ function App() {
     formData.append('target_lang', targetLang);
 
     try {
-      const response = await axios.post(`${API}/translate`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+      // Use fetch with SSE
+      const response = await fetch(`${API}/translate`, {
+        method: 'POST',
+        body: formData,
       });
-      setResult(response.data);
-      fetchHistory();
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Greška prilikom prevođenja');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) break;
+        
+        buffer += decoder.decode(value, { stream: true });
+        
+        // Process SSE events
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        
+        let currentEvent = null;
+        let currentData = '';
+        
+        for (const line of lines) {
+          if (line.startsWith('event:')) {
+            currentEvent = line.slice(6).trim();
+          } else if (line.startsWith('data:')) {
+            currentData = line.slice(5).trim();
+            
+            if (currentData) {
+              try {
+                const data = JSON.parse(currentData);
+                
+                if (currentEvent === 'progress') {
+                  setProgress({
+                    percent: data.percent || 0,
+                    translated: data.translated || 0,
+                    total: data.total || 0,
+                    toTranslate: data.to_translate || 0,
+                    skipped: data.skipped || 0,
+                    errors: data.errors || 0,
+                    etaSeconds: data.eta_seconds,
+                    currentText: data.current_text || "",
+                    status: data.status || "translating"
+                  });
+                } else if (currentEvent === 'complete') {
+                  setResult(data);
+                  setProgress(prev => ({ ...prev, status: "complete", percent: 100 }));
+                  fetchHistory();
+                }
+              } catch (parseError) {
+                console.error('Error parsing SSE data:', parseError);
+              }
+            }
+          }
+        }
+      }
     } catch (e) {
       console.error('Translation error:', e);
-      setError(e.response?.data?.detail || 'Greška prilikom prevođenja');
+      setError(e.message || 'Greška prilikom prevođenja');
     } finally {
       setLoading(false);
     }
@@ -172,7 +261,7 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
-  const downloadHistoryItem = async (id, filename, targetLang) => {
+  const downloadHistoryItem = async (id, filename, lang) => {
     try {
       const response = await axios.get(`${API}/translations/${id}/download`, {
         responseType: 'blob'
@@ -182,7 +271,7 @@ function App() {
       const a = document.createElement('a');
       a.href = url;
       const originalName = filename.replace('.po', '');
-      a.download = `${originalName}_${targetLang}.po`;
+      a.download = `${originalName}_${lang}.po`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -197,7 +286,92 @@ function App() {
     setFile(null);
     setResult(null);
     setError(null);
+    setProgress({
+      percent: 0,
+      translated: 0,
+      total: 0,
+      toTranslate: 0,
+      skipped: 0,
+      errors: 0,
+      etaSeconds: null,
+      currentText: "",
+      status: "idle"
+    });
   };
+
+  // Progress Loader Component
+  const ProgressLoader = () => (
+    <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl p-8 border border-slate-700" data-testid="progress-loader">
+      <div className="text-center mb-6">
+        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-purple-600/20 mb-4">
+          <svg className="animate-spin h-8 w-8 text-purple-500" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+          </svg>
+        </div>
+        <h2 className="text-xl font-semibold text-white mb-2">Prevođenje u tijeku...</h2>
+        <p className="text-slate-400 text-sm">
+          {progress.currentText && (
+            <span className="block truncate max-w-md mx-auto">
+              Trenutno: &quot;{progress.currentText}&quot;
+            </span>
+          )}
+        </p>
+      </div>
+
+      {/* Progress Bar */}
+      <div className="mb-6">
+        <div className="flex justify-between text-sm text-slate-400 mb-2">
+          <span>Napredak</span>
+          <span data-testid="progress-percent">{progress.percent}%</span>
+        </div>
+        <div className="h-4 bg-slate-700 rounded-full overflow-hidden">
+          <div 
+            className="h-full bg-gradient-to-r from-purple-600 to-pink-600 transition-all duration-300 ease-out rounded-full"
+            style={{ width: `${progress.percent}%` }}
+            data-testid="progress-bar"
+          />
+        </div>
+      </div>
+
+      {/* Stats Grid */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="bg-slate-700/50 rounded-lg p-3 text-center">
+          <p className="text-2xl font-bold text-white" data-testid="progress-total">{progress.total}</p>
+          <p className="text-xs text-slate-400">Ukupno</p>
+        </div>
+        <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3 text-center">
+          <p className="text-2xl font-bold text-green-400" data-testid="progress-translated">{progress.translated}</p>
+          <p className="text-xs text-slate-400">Prevedeno</p>
+        </div>
+        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 text-center">
+          <p className="text-2xl font-bold text-yellow-400" data-testid="progress-skipped">{progress.skipped}</p>
+          <p className="text-xs text-slate-400">Preskočeno</p>
+        </div>
+        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-center">
+          <p className="text-2xl font-bold text-red-400" data-testid="progress-errors">{progress.errors}</p>
+          <p className="text-xs text-slate-400">Greške</p>
+        </div>
+      </div>
+
+      {/* ETA */}
+      <div className="text-center">
+        <div className="inline-flex items-center gap-2 bg-slate-700/50 rounded-full px-4 py-2">
+          <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span className="text-slate-300">
+            Preostalo vrijeme: <span className="text-white font-medium" data-testid="progress-eta">{formatTime(progress.etaSeconds)}</span>
+          </span>
+        </div>
+      </div>
+
+      {/* Progress details */}
+      <div className="mt-6 text-center text-sm text-slate-500">
+        <p>Za prevesti: {progress.toTranslate} stringova</p>
+      </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
@@ -258,7 +432,9 @@ function App() {
         )}
 
         {/* Main Content */}
-        {!result ? (
+        {loading ? (
+          <ProgressLoader />
+        ) : !result ? (
           <div className="grid md:grid-cols-2 gap-8">
             {/* Upload Section */}
             <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl p-6 border border-slate-700">
@@ -354,20 +530,8 @@ function App() {
                   className="w-full py-4 px-6 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 disabled:from-slate-600 disabled:to-slate-600 disabled:cursor-not-allowed rounded-lg text-white font-semibold transition-all flex items-center justify-center gap-2"
                   data-testid="translate-btn"
                 >
-                  {loading ? (
-                    <>
-                      <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-                      </svg>
-                      Prevodim...
-                    </>
-                  ) : (
-                    <>
-                      <TranslateIcon />
-                      Prevedi
-                    </>
-                  )}
+                  <TranslateIcon />
+                  Prevedi
                 </button>
               </div>
             </div>
@@ -456,16 +620,18 @@ function App() {
         )}
 
         {/* Info Section */}
-        <div className="mt-8 bg-slate-800/30 rounded-xl p-6 border border-slate-700/50">
-          <h3 className="text-white font-semibold mb-3">ℹ️ Kako koristiti</h3>
-          <ul className="text-slate-400 text-sm space-y-2">
-            <li>• Uploadajte .po datoteku iz WPML-a ili nekog drugog sustava za lokalizaciju</li>
-            <li>• Odaberite izvorni jezik (ili ostavite &quot;Automatski&quot;) i ciljni jezik prijevoda</li>
-            <li>• Kliknite &quot;Prevedi&quot; i pričekajte dok se svi stringovi prevedu</li>
-            <li>• Preuzmite prevedenu .po datoteku i importirajte je natrag u WPML</li>
-            <li>• Stringovi koji već imaju prijevod bit će preskočeni</li>
-          </ul>
-        </div>
+        {!loading && !result && (
+          <div className="mt-8 bg-slate-800/30 rounded-xl p-6 border border-slate-700/50">
+            <h3 className="text-white font-semibold mb-3">ℹ️ Kako koristiti</h3>
+            <ul className="text-slate-400 text-sm space-y-2">
+              <li>• Uploadajte .po datoteku iz WPML-a ili nekog drugog sustava za lokalizaciju</li>
+              <li>• Odaberite izvorni jezik (ili ostavite &quot;Automatski&quot;) i ciljni jezik prijevoda</li>
+              <li>• Kliknite &quot;Prevedi&quot; i pričekajte dok se svi stringovi prevedu</li>
+              <li>• Preuzmite prevedenu .po datoteku i importirajte je natrag u WPML</li>
+              <li>• Stringovi koji već imaju prijevod bit će preskočeni</li>
+            </ul>
+          </div>
+        )}
       </main>
 
       {/* Footer */}
