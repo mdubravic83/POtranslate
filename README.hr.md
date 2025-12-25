@@ -263,16 +263,52 @@ docker-compose down
 
 ## ☁️ Cloud Deployment
 
-### Option 1: DigitalOcean App Platform
+### Opcija 1: DigitalOcean App Platform
 
-1. Kreiraj App na DigitalOcean
-2. Poveži GitHub repozitorij
-3. Postavi environment varijable:
-   - Backend: `MONGO_URL`, `DB_NAME`, `CORS_ORIGINS`
-   - Frontend: `REACT_APP_BACKEND_URL`
-4. Deploy
+Ovaj projekt uključuje unaprijed konfiguriranu App Spec datoteku (`.do/app.yaml`) za jednostavan deployment.
 
-### Option 2: Railway
+**Metoda A: Automatska detekcija**
+1. Push-aj ovaj repo na GitHub
+2. Idi na [DigitalOcean App Platform](https://cloud.digitalocean.com/apps)
+3. Klikni "Create App"
+4. Odaberi svoj GitHub repozitorij
+5. DigitalOcean će automatski detektirati `.do/app.yaml` spec
+6. Uredi spec i zamijeni `<your-github-username>/<your-repo-name>` sa stvarnim repom
+7. Klikni "Create Resources"
+
+**Metoda B: Ručno postavljanje (ako automatska detekcija ne radi)**
+1. Idi na DigitalOcean App Platform → Create App
+2. Odaberi GitHub i svoj repozitorij
+3. Klikni "Edit" pored "Resources Detected"
+4. Dodaj **Backend** komponentu:
+   - Source Directory: `/backend`
+   - Type: Web Service
+   - Dockerfile Path: `Dockerfile`
+   - HTTP Port: `8001`
+   - HTTP Route: `/api`
+5. Dodaj **Frontend** komponentu:
+   - Source Directory: `/frontend`  
+   - Type: Web Service
+   - Dockerfile Path: `Dockerfile`
+   - HTTP Port: `80`
+   - HTTP Route: `/`
+6. Dodaj **Database** komponentu:
+   - Type: MongoDB (Dev Database)
+7. Postavi Environment Varijable:
+   - Backend:
+     - `MONGO_URL`: `${db.DATABASE_URL}`
+     - `DB_NAME`: `po_translator`
+     - `CORS_ORIGINS`: `${APP_URL}`
+   - Frontend (Build-time):
+     - `REACT_APP_BACKEND_URL`: `${APP_URL}`
+8. Deploy
+
+**Rješavanje problema "No components detected":**
+- Provjeri da je `.do/app.yaml` u repozitoriju
+- Ili ručno specificiraj source directories kao u Metodi B
+- Provjeri da Dockerfile postoji u `/backend/Dockerfile` i `/frontend/Dockerfile`
+
+### Opcija 2: Railway
 
 ```bash
 # Instaliraj Railway CLI
