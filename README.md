@@ -267,12 +267,48 @@ docker-compose down
 
 ### Option 1: DigitalOcean App Platform
 
-1. Create App on DigitalOcean
-2. Connect GitHub repository
-3. Set environment variables:
-   - Backend: `MONGO_URL`, `DB_NAME`, `CORS_ORIGINS`
-   - Frontend: `REACT_APP_BACKEND_URL`
-4. Deploy
+This project includes a pre-configured App Spec file (`.do/app.yaml`) for easy deployment.
+
+**Method A: Automatic Detection**
+1. Push this repo to GitHub
+2. Go to [DigitalOcean App Platform](https://cloud.digitalocean.com/apps)
+3. Click "Create App"
+4. Select your GitHub repository
+5. DigitalOcean will auto-detect the `.do/app.yaml` spec
+6. Edit the spec and replace `<your-github-username>/<your-repo-name>` with your actual repo
+7. Click "Create Resources"
+
+**Method B: Manual Setup (if auto-detection fails)**
+1. Go to DigitalOcean App Platform → Create App
+2. Select GitHub and your repository
+3. Click "Edit" next to "Resources Detected"
+4. Add **Backend** component:
+   - Source Directory: `/backend`
+   - Type: Web Service
+   - Dockerfile Path: `Dockerfile`
+   - HTTP Port: `8001`
+   - HTTP Route: `/api`
+5. Add **Frontend** component:
+   - Source Directory: `/frontend`  
+   - Type: Web Service
+   - Dockerfile Path: `Dockerfile`
+   - HTTP Port: `80`
+   - HTTP Route: `/`
+6. Add **Database** component:
+   - Type: MongoDB (Dev Database)
+7. Set Environment Variables:
+   - Backend:
+     - `MONGO_URL`: `${db.DATABASE_URL}`
+     - `DB_NAME`: `po_translator`
+     - `CORS_ORIGINS`: `${APP_URL}`
+   - Frontend (Build-time):
+     - `REACT_APP_BACKEND_URL`: `${APP_URL}`
+8. Deploy
+
+**Troubleshooting "No components detected":**
+- Make sure `.do/app.yaml` is in the repository
+- Or manually specify source directories as shown in Method B
+- Ensure Dockerfiles exist in `/backend/Dockerfile` and `/frontend/Dockerfile`
 
 ### Option 2: Railway
 
