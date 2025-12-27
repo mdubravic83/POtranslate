@@ -1,3 +1,15 @@
+# ============================================
+# PO Translator - Docker Compose Configuration
+# ============================================
+# 
+# IMPORTANT: Before deploying, update these values:
+# 1. REACT_APP_BACKEND_URL - your domain (e.g., https://freeapps.megabooker.com)
+# 2. CORS_ORIGINS - your domain for CORS
+#
+# For production deployment:
+#   docker-compose -f docker-compose.yml up -d --build
+# ============================================
+
 version: '3.8'
 
 services:
@@ -23,7 +35,8 @@ services:
     environment:
       - MONGO_URL=mongodb://mongodb:27017
       - DB_NAME=po_translator
-      - CORS_ORIGINS=http://localhost:3000,http://localhost
+      # IMPORTANT: Change this to your domain!
+      - CORS_ORIGINS=https://freeapps.megabooker.com,http://localhost:3000
     ports:
       - "8001:8001"
     depends_on:
@@ -36,7 +49,9 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        - REACT_APP_BACKEND_URL=http://localhost:8001
+        # IMPORTANT: Change this to your domain!
+        # This URL is baked into the frontend at build time
+        - REACT_APP_BACKEND_URL=https://freeapps.megabooker.com
     container_name: po-translator-frontend
     ports:
       - "3000:80"
