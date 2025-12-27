@@ -172,9 +172,10 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        # ⚠️ CHANGE THIS to your domain!
+        - REACT_APP_BACKEND_URL=https://your-domain.com
     container_name: po-translator-frontend
-    environment:
-      - REACT_APP_BACKEND_URL=http://localhost:8001
     ports:
       - "3000:80"
     depends_on:
