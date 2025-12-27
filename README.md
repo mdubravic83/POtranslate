@@ -217,7 +217,7 @@ Create `frontend/Dockerfile`:
 
 ```dockerfile
 # Build stage
-FROM node:18-alpine as build
+FROM node:20-alpine as build
 
 WORKDIR /app
 
