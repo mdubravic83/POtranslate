@@ -1,0 +1,63 @@
+# ============================================
+# PO Translator - Production Configuration
+# For: freeapps.megabooker.com
+# ============================================
+#
+# Usage:
+#   docker-compose -f docker-compose.prod.yml up -d --build
+#
+# ============================================
+
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:6.0
+    container_name: po-translator-mongo
+    volumes:
+      - mongodb_data:/data/db
+    # Remove port exposure in production for security
+    # ports:
+    #   - "27017:27017"
+    restart: unless-stopped
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: po-translator-backend
+    environment:
+      - MONGO_URL=mongodb://mongodb:27017
+      - DB_NAME=po_translator
+      - CORS_ORIGINS=https://freeapps.megabooker.com
+    ports:
+      - "8001:8001"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - REACT_APP_BACKEND_URL=https://freeapps.megabooker.com
+    container_name: po-translator-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  mongodb_data:
+
+networks:
+  default:
+    name: po-translator-network
