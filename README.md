@@ -118,6 +118,23 @@ Open browser at `http://localhost:3000`
 
 ## 🐳 Docker Deployment
 
+### ⚠️ IMPORTANT: Setting the Backend URL
+
+The frontend needs to know your backend URL **at build time**. This is crucial!
+
+```bash
+# When building frontend, you MUST specify your domain:
+docker build --build-arg REACT_APP_BACKEND_URL=https://your-domain.com -t frontend ./frontend
+```
+
+### Quick Start for Production
+
+```bash
+# 1. Edit docker-compose.prod.yml and set your domain
+# 2. Run:
+docker-compose -f docker-compose.prod.yml up -d --build
+```
+
 ### Docker Compose (recommended)
 
 Create `docker-compose.yml` in root directory:
@@ -143,7 +160,8 @@ services:
     environment:
       - MONGO_URL=mongodb://mongodb:27017
       - DB_NAME=po_translator
-      - CORS_ORIGINS=http://localhost:3000,https://your-domain.com
+      # ⚠️ CHANGE THIS to your domain!
+      - CORS_ORIGINS=https://your-domain.com
     ports:
       - "8001:8001"
     depends_on:
